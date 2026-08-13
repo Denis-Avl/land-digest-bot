@@ -10,7 +10,7 @@ CHANNELS = [
     "kameneva_law"
 ]
 
-BOT_TOKEN = os.getenv("ZEMLYA_DIGEST_BOT", "").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID   = os.getenv("CHAT_ID", "").strip()
 HF_KEY    = os.getenv("HF_KEY", "").strip()
 
@@ -21,7 +21,7 @@ HF_MODELS = [
 ]
 
 SEEN_FILE = "seen.txt"
-POSTS_PER_CHANNEL = 5   # берём только 5 последних постов из канала
+POSTS_PER_CHANNEL = 5
 # =============================================
 
 PROMPT = """Ты — помощник земельного специалиста. Из постов ниже сделай краткий
@@ -68,15 +68,27 @@ def ask_pollinations(text):
                   "messages": [{"role": "user", "content": text}]},
             timeout=180)
         if r.status_code == 200:
+            try:
+                return r.json()["choices"][0]["message"]["content"]
+            except Exception:
+                if len(r.text) > 100:
+                    return r.text
+    except Exception as e:
+        print("⚠️ Pollinations /openai error:", e)
+    try:
+        r = requests.post(
+            "https://text.pollinations.ai/",
+            json={"messages": [{"role": "user", "content": text}], "model": "openai"},
+            timeout=180)
+        if r.status_code == 200 and len(r.text) > 100:
             print("✅ Сработал Pollinations")
-            return r.json()["choices"][0]["message"]["content"]
+            return r.text
         print(f"⚠️ Pollinations → {r.status_code}: {r.text[:200]}")
     except Exception as e:
         print("⚠️ Pollinations error:", e)
     return None
 
 def main():
-    # Диагностика: видны ли секреты коду (показываем только длину, не сами ключи)
     print(f"🔑 Длины ключей: BOT_TOKEN={len(BOT_TOKEN)}, CHAT_ID={len(CHAT_ID)}, HF_KEY={len(HF_KEY)}")
 
     seen = set(open(SEEN_FILE).read().splitlines()) if os.path.exists(SEEN_FILE) else set()
