@@ -30,7 +30,7 @@ jobs:
           AI_KEY: ${{ secrets.AI_KEY }}
         run: python digest.py
 
-           - name: Commit seen.txt changes
+      - name: Commit seen.txt changes
         run: |
           if [ -f "seen.txt" ] && [ -s "seen.txt" ]; then
             git config --local user.email "action@github.com"
