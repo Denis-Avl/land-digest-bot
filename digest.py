@@ -1,35 +1,26 @@
-import os, requests
+import os, re, requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 
 # ================= НАСТРОЙКИ =================
 CHANNELS = [
-    "land_jurist",
-    "zemlya_tvoi_kapital",
-    "OzhevaProZem",
-    "kameneva_law"
+    ("land_jurist", "Про землю · Кузьменко"),
+    ("zemlya_tvoi_kapital", "Земля — твой капитал"),
+    ("OzhevaProZem", "ProЗемлю · Дзен Инвестиций"),
+    ("kameneva_law", "Земельный юрист · Каменева"),
 ]
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID   = os.getenv("CHAT_ID", "").strip()
-HF_KEY    = os.getenv("HF_KEY", "").strip()
-
-AI_URL_HF = "https://router.huggingface.co/v1/chat/completions"
-HF_MODELS = [
-    "mistralai/Mistral-7B-Instruct-v0.3",
-    "microsoft/Phi-3.5-mini-instruct",
-]
 
 SEEN_FILE = "seen.txt"
-POSTS_PER_CHANNEL = 5
+POSTS_PER_CHANNEL = 3
 # =============================================
 
-PROMPT = """Ты — помощник земельного специалиста. Из постов ниже сделай краткий
-дайджест на русском: 5–8 пунктов по сути, отдельно выдели всё, что касается
-ВРИ, категорий, зон, торгов, судов и рисков. Живой стиль, без воды.
-
-ПОСТЫ:
-"""
+def clean_text(text):
+    """Убирает лишние пробелы и спецсимволы."""
+    text = re.sub(r'\s+', ' ', text)
+    return text.strip()
 
 def get_posts(channel):
     r = requests.get(f"https://t.me/s/{channel}", headers={"User-Agent": "Mozilla/5.0"})
@@ -39,86 +30,86 @@ def get_posts(channel):
         text_div = block.select_one("div.tgme_widget_message_text")
         time_a   = block.select_one("time")
         if text_div and time_a:
-            posts.append((time_a.get("datetime"), text_div.get_text(" ", strip=True)[:600]))
+            full_text = clean_text(text_div.get_text(" ", strip=True))
+            if not full_text:
+                continue
+            # Берём первые 250 символов как анонс
+            snippet = full_text[:250]
+            if len(full_text) > 250:
+                snippet = snippet.rsplit(' ', 1)[0] + "…"
+            dt = time_a.get("datetime", "")
+            date_str = dt[:10] if dt else ""
+            posts.append((dt, date_str, snippet))
     return posts[-POSTS_PER_CHANNEL:]
 
-def ask_hf(text):
-    if not HF_KEY:
-        print("⚠️ HF_KEY пустой — пропускаю Hugging Face")
-        return None
-    for model in HF_MODELS:
-        r = requests.post(
-            AI_URL_HF,
-            headers={"Authorization": f"Bearer {HF_KEY}"},
-            json={"model": model, "temperature": 0.4,
-                  "messages": [{"role": "user", "content": text}]})
-        if r.status_code == 200:
-            print(f"✅ Сработала модель HF: {model}")
-            return r.json()["choices"][0]["message"]["content"]
-        print(f"⚠️ {model} → {r.status_code}: {r.text[:200]}")
-    return None
-
-def ask_pollinations(text):
-    """Запасная нейросеть БЕЗ ключа."""
-    print("🔄 Пробую Pollinations (без ключа)...")
-    try:
-        r = requests.post(
-            "https://text.pollinations.ai/openai",
-            json={"model": "openai", "temperature": 0.4,
-                  "messages": [{"role": "user", "content": text}]},
-            timeout=180)
-        if r.status_code == 200:
-            try:
-                return r.json()["choices"][0]["message"]["content"]
-            except Exception:
-                if len(r.text) > 100:
-                    return r.text
-    except Exception as e:
-        print("⚠️ Pollinations /openai error:", e)
-    try:
-        r = requests.post(
-            "https://text.pollinations.ai/",
-            json={"messages": [{"role": "user", "content": text}], "model": "openai"},
-            timeout=180)
-        if r.status_code == 200 and len(r.text) > 100:
-            print("✅ Сработал Pollinations")
-            return r.text
-        print(f"⚠️ Pollinations → {r.status_code}: {r.text[:200]}")
-    except Exception as e:
-        print("⚠️ Pollinations error:", e)
-    return None
+def extract_keywords(text):
+    """Подсвечиваем важные земельные термины."""
+    keywords = []
+    lower = text.lower()
+    terms = {
+        "ври": "🏷", "категор": "🏷", "суд": "⚖️", "иск": "⚖️",
+        "торг": "🔨", "банкрот": "🔨", "схем": "📐", "межев": "📐",
+        "нспд": "📐", "арго": "📐", "кфх": "🌾", "сельхоз": "🌾",
+        "ижс": "🏡", "промышлен": "🏭", "промзем": "🏭", "склад": "🏭",
+        "аренд": "📋", "выкуп": "📋", "перераспределен": "🔀",
+        "затоплен": "💧", "подтоплен": "💧", "крт": "🏗",
+        "агротуризм": "🌿", "глэмпинг": "🌿", "кемпинг": "🌿",
+    }
+    for term, emoji in terms.items():
+        if term in lower and emoji not in keywords:
+            keywords.append(emoji)
+    return " ".join(keywords[:3]) if keywords else "📌"
 
 def main():
-    print(f"🔑 Длины ключей: BOT_TOKEN={len(BOT_TOKEN)}, CHAT_ID={len(CHAT_ID)}, HF_KEY={len(HF_KEY)}")
+    print(f"🔑 BOT_TOKEN: {len(BOT_TOKEN)} символов, CHAT_ID: {len(CHAT_ID)} символов")
+
+    if not BOT_TOKEN:
+        print("❌ BOT_TOKEN пустой!")
+        return
 
     seen = set(open(SEEN_FILE).read().splitlines()) if os.path.exists(SEEN_FILE) else set()
-    new_posts, new_ids = [], []
 
-    for ch in CHANNELS:
-        for dt, text in get_posts(ch):
-            if dt not in seen and text:
-                new_posts.append(f"[{ch}] {text}")
-                new_ids.append(dt)
+    digest_parts = [f"🗞️ **Земельный дайджест** · {datetime.now():%d.%m.%Y}\n"]
+    total_new = 0
 
-    if not new_posts:
-        print("Новых постов нет — дайджест не отправлен.")
+    for channel, channel_name in CHANNELS:
+        posts = get_posts(channel)
+        new_posts = [(dt, date, txt) for dt, date, txt in posts if dt not in seen]
+        if not new_posts:
+            continue
+
+        digest_parts.append(f"\n**📢 {channel_name}**")
+        for dt, date, text in new_posts:
+            tags = extract_keywords(text)
+            digest_parts.append(f"\n{tags} _{date}_\n{text}")
+            digest_parts.append(f"🔗 t.me/{channel}/{dt.split('/')[-1] if '/' in dt else ''}")
+            seen.add(dt)
+            total_new += 1
+
+    if total_new == 0:
+        print("Новых постов нет.")
         return
 
-    full_text = PROMPT + "\n---\n".join(new_posts)
+    digest_parts.append(f"\n\n📊 **Итого:** {total_new} новых постов из {len(CHANNELS)} каналов")
+    digest_parts.append("\n💬 _Подробный разбор — в комментариях_")
 
-    digest = ask_hf(full_text)
-    if digest is None:
-        digest = ask_pollinations(full_text)
-    if digest is None:
-        print("❌ Ни одна нейросеть не сработала. Пришли мне лог выше.")
-        return
+    digest = "\n".join(digest_parts)
 
-    requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-                  json={"chat_id": CHAT_ID,
-                        "text": f"🗞️ Земельный дайджест · {datetime.now():%d.%m}\n\n{digest}"})
+    # Telegram ограничивает сообщение 4096 символами
+    if len(digest) > 4000:
+        digest = digest[:4000] + "\n\n...(сокращено)"
 
-    open(SEEN_FILE, "a").write("\n".join(new_ids) + "\n")
-    print("Дайджест отправлен ✅")
+    r = requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
+                      json={"chat_id": CHAT_ID,
+                            "text": digest,
+                            "parse_mode": "Markdown"})
+
+    if r.status_code == 200:
+        with open(SEEN_FILE, "w") as f:
+            f.write("\n".join(sorted(seen)))
+        print(f"✅ Дайджест отправлен! {total_new} постов")
+    else:
+        print(f"❌ Ошибка Telegram: {r.status_code} {r.text[:300]}")
 
 if __name__ == "__main__":
     main()
