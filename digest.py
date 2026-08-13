@@ -19,7 +19,7 @@ GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
 SEEN_FILE = "seen.txt"
 POSTS_PER_CHANNEL = 3
-SUMMARY_ONLY = True  # True = только ИИ-выжимка; False = выжимка + подробный список
+SUMMARY_ONLY = False  # True = только ИИ-выжимка; False = выжимка + подробный список
 # =============================================
 
 PROMPT = """Ты — помощник земельного специалиста. Ниже посты из земельных Telegram-каналов.
