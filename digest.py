@@ -12,14 +12,13 @@ CHANNELS = [
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID   = os.getenv("CHAT_ID", "").strip()
-GROQ_KEY  = os.getenv("GROQ_KEY", "").strip()
+HF_KEY    = os.getenv("HF_KEY", "").strip()
 
-# Используем только Groq - он стабильнее бесплатных моделей
-AI_URL = "https://api.groq.com/openai/v1/chat/completions"
+AI_URL = "https://router.huggingface.co/v1/chat/completions"
 AI_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "gemma2-9b-it",
+    "mistralai/Mistral-7B-Instruct-v0.3",
+    "microsoft/Phi-3.5-mini-instruct",
+    "Qwen/Qwen2.5-72B-Instruct",
 ]
 
 SEEN_FILE = "seen.txt"
@@ -44,17 +43,16 @@ def get_posts(channel):
     return posts
 
 def ask_ai(text):
-    """Перебирает модели Groq, пока одна не ответит."""
     for model in AI_MODELS:
         r = requests.post(
             AI_URL,
-            headers={"Authorization": f"Bearer {GROQ_KEY}"},
+            headers={"Authorization": f"Bearer {HF_KEY}"},
             json={"model": model, "temperature": 0.4,
                   "messages": [{"role": "user", "content": text}]})
         if r.status_code == 200:
             print(f"✅ Сработала модель: {model}")
             return r.json()["choices"][0]["message"]["content"]
-        print(f"⚠️ Модель недоступна: {model} {r.status_code}")
+        print(f"⚠️ {model} → {r.status_code}: {r.text[:200]}")
     return None
 
 def main():
@@ -72,9 +70,8 @@ def main():
         return
 
     digest = ask_ai(PROMPT + "\n---\n".join(new_posts))
-    
     if digest is None:
-        print("❌ Ни одна модель Groq не сработала. Проверь ключ GROQ_KEY.")
+        print("❌ Ни одна модель не сработала. Скопируй лог выше и пришли мне.")
         return
 
     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
