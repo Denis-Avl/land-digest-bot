@@ -16,7 +16,7 @@ CHAT_ID   = os.getenv("CHAT_ID", "").strip()
 AI_KEY    = os.getenv("AI_KEY", "").strip()
 
 AI_URL   = "https://openrouter.ai/api/v1/chat/completions"
-AI_MODEL = "meta-llama/llama-3.1-8b-instruct:free"
+AI_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
 # Если модель недоступна — замени на другую бесплатную с openrouter.ai/models
 # например: "google/gemma-3-27b-it:free"
 
