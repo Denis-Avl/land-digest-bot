@@ -10,15 +10,21 @@ CHANNELS = [
     "kameneva_law"
 ]
 
-# .strip() убирает случайные пробелы и переводы строк из секретов
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID   = os.getenv("CHAT_ID", "").strip()
 AI_KEY    = os.getenv("AI_KEY", "").strip()
 
-AI_URL   = "https://openrouter.ai/api/v1/chat/completions"
-AI_MODEL = "meta-llama/llama-3.3-70b-instruct:free"
-# Если модель недоступна — замени на другую бесплатную с openrouter.ai/models
-# например: "google/gemma-3-27b-it:free"
+AI_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# Список бесплатных моделей: бот переберёт их по очереди,
+# пока не найдёт рабочую. Если какая-то "умрёт" — он просто возьмёт следующую.
+AI_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "google/gemma-3-27b-it:free",
+    "qwen/qwen-2.5-72b-instruct:free",
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "deepseek/deepseek-chat-v3-0324:free",
+]
 
 SEEN_FILE = "seen.txt"
 # =============================================
@@ -41,6 +47,20 @@ def get_posts(channel):
             posts.append((time_a.get("datetime"), text_div.get_text(" ", strip=True)))
     return posts
 
+def ask_ai(text):
+    """Перебирает бесплатные модели, пока одна не ответит."""
+    for model in AI_MODELS:
+        r = requests.post(
+            AI_URL,
+            headers={"Authorization": f"Bearer {AI_KEY}"},
+            json={"model": model, "temperature": 0.4,
+                  "messages": [{"role": "user", "content": text}]})
+        if r.status_code == 200:
+            print("✅ Сработала модель:", model)
+            return r.json()["choices"][0]["message"]["content"]
+        print("⚠️ Модель недоступна:", model, r.status_code)
+    return None
+
 def main():
     seen = set(open(SEEN_FILE).read().splitlines()) if os.path.exists(SEEN_FILE) else set()
     new_posts, new_ids = [], []
@@ -55,17 +75,10 @@ def main():
         print("Новых постов нет — дайджест не отправлен.")
         return
 
-    r = requests.post(
-        AI_URL,
-        headers={"Authorization": f"Bearer {AI_KEY}"},
-        json={"model": AI_MODEL, "temperature": 0.4,
-              "messages": [{"role": "user", "content": PROMPT + "\n---\n".join(new_posts)}]})
-
-    if r.status_code != 200:
-        print("Ошибка нейросети:", r.status_code, r.text[:500])
+    digest = ask_ai(PROMPT + "\n---\n".join(new_posts))
+    if digest is None:
+        print("❌ Ни одна бесплатная модель не сработала. Проверь список на openrouter.ai/models")
         return
-
-    digest = r.json()["choices"][0]["message"]["content"]
 
     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
                   json={"chat_id": CHAT_ID,
