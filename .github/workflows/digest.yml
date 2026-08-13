@@ -1,0 +1,39 @@
+name: Земельный дайджест
+
+on:
+  schedule:
+    # 10:00 МСК = 7:00 UTC (каждый будний день)
+    - cron: '0 7 * * 1-5'
+  workflow_dispatch:  # Возможность ручного запуска
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Run digest bot
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+          AI_KEY: ${{ secrets.AI_KEY }}
+        run: python digest.py
+
+      - name: Commit seen.txt changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add seen.txt
+          git diff --staged --quiet || git commit -m "Update seen.txt"
+          git push
