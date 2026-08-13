@@ -12,22 +12,11 @@ CHANNELS = [
 
 BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
 CHAT_ID   = os.getenv("CHAT_ID", "").strip()
-AI_KEY    = os.getenv("AI_KEY", "").strip()
 GROQ_KEY  = os.getenv("GROQ_KEY", "").strip()
 
-# OpenRouter
-AI_URL_OPENROUTER = "https://openrouter.ai/api/v1/chat/completions"
-AI_MODELS_OPENROUTER = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "google/gemma-3-27b-it:free",
-    "qwen/qwen-2.5-72b-instruct:free",
-    "mistralai/mistral-small-3.1-24b-instruct:free",
-    "deepseek/deepseek-chat-v3-0324:free",
-]
-
-# Groq (запасной вариант)
-AI_URL_GROQ = "https://api.groq.com/openai/v1/chat/completions"
-AI_MODELS_GROQ = [
+# Используем только Groq - он стабильнее бесплатных моделей
+AI_URL = "https://api.groq.com/openai/v1/chat/completions"
+AI_MODELS = [
     "llama-3.3-70b-versatile",
     "llama-3.1-8b-instant",
     "gemma2-9b-it",
@@ -54,16 +43,16 @@ def get_posts(channel):
             posts.append((time_a.get("datetime"), text_div.get_text(" ", strip=True)))
     return posts
 
-def ask_ai(url, key, models, text):
-    """Перебирает модели, пока одна не ответит."""
-    for model in models:
+def ask_ai(text):
+    """Перебирает модели Groq, пока одна не ответит."""
+    for model in AI_MODELS:
         r = requests.post(
-            url,
-            headers={"Authorization": f"Bearer {key}"},
+            AI_URL,
+            headers={"Authorization": f"Bearer {GROQ_KEY}"},
             json={"model": model, "temperature": 0.4,
                   "messages": [{"role": "user", "content": text}]})
         if r.status_code == 200:
-            print(f"✅ Сработала модель: {model} ({url})")
+            print(f"✅ Сработала модель: {model}")
             return r.json()["choices"][0]["message"]["content"]
         print(f"⚠️ Модель недоступна: {model} {r.status_code}")
     return None
@@ -82,18 +71,10 @@ def main():
         print("Новых постов нет — дайджест не отправлен.")
         return
 
-    # Сначала пробуем OpenRouter
-    digest = ask_ai(AI_URL_OPENROUTER, AI_KEY, AI_MODELS_OPENROUTER, 
-                    PROMPT + "\n---\n".join(new_posts))
-    
-    # Если не сработало — пробуем Groq
-    if digest is None and GROQ_KEY:
-        print("OpenRouter недоступен, переключаемся на Groq...")
-        digest = ask_ai(AI_URL_GROQ, GROQ_KEY, AI_MODELS_GROQ, 
-                        PROMPT + "\n---\n".join(new_posts))
+    digest = ask_ai(PROMPT + "\n---\n".join(new_posts))
     
     if digest is None:
-        print("❌ Ни одна модель не сработала. Проверь ключи или добавь новые модели.")
+        print("❌ Ни одна модель Groq не сработала. Проверь ключ GROQ_KEY.")
         return
 
     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
