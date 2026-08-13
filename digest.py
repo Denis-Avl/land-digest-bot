@@ -14,14 +14,14 @@ BOT_TOKEN = os.getenv("ZEMLYA_DIGEST_BOT", "").strip()
 CHAT_ID   = os.getenv("CHAT_ID", "").strip()
 HF_KEY    = os.getenv("HF_KEY", "").strip()
 
-AI_URL = "https://router.huggingface.co/v1/chat/completions"
-AI_MODELS = [
+AI_URL_HF = "https://router.huggingface.co/v1/chat/completions"
+HF_MODELS = [
     "mistralai/Mistral-7B-Instruct-v0.3",
     "microsoft/Phi-3.5-mini-instruct",
-    "Qwen/Qwen2.5-72B-Instruct",
 ]
 
 SEEN_FILE = "seen.txt"
+POSTS_PER_CHANNEL = 5   # берём только 5 последних постов из канала
 # =============================================
 
 PROMPT = """Ты — помощник земельного специалиста. Из постов ниже сделай краткий
@@ -39,23 +39,46 @@ def get_posts(channel):
         text_div = block.select_one("div.tgme_widget_message_text")
         time_a   = block.select_one("time")
         if text_div and time_a:
-            posts.append((time_a.get("datetime"), text_div.get_text(" ", strip=True)))
-    return posts
+            posts.append((time_a.get("datetime"), text_div.get_text(" ", strip=True)[:600]))
+    return posts[-POSTS_PER_CHANNEL:]
 
-def ask_ai(text):
-    for model in AI_MODELS:
+def ask_hf(text):
+    if not HF_KEY:
+        print("⚠️ HF_KEY пустой — пропускаю Hugging Face")
+        return None
+    for model in HF_MODELS:
         r = requests.post(
-            AI_URL,
+            AI_URL_HF,
             headers={"Authorization": f"Bearer {HF_KEY}"},
             json={"model": model, "temperature": 0.4,
                   "messages": [{"role": "user", "content": text}]})
         if r.status_code == 200:
-            print(f"✅ Сработала модель: {model}")
+            print(f"✅ Сработала модель HF: {model}")
             return r.json()["choices"][0]["message"]["content"]
         print(f"⚠️ {model} → {r.status_code}: {r.text[:200]}")
     return None
 
+def ask_pollinations(text):
+    """Запасная нейросеть БЕЗ ключа."""
+    print("🔄 Пробую Pollinations (без ключа)...")
+    try:
+        r = requests.post(
+            "https://text.pollinations.ai/openai",
+            json={"model": "openai", "temperature": 0.4,
+                  "messages": [{"role": "user", "content": text}]},
+            timeout=180)
+        if r.status_code == 200:
+            print("✅ Сработал Pollinations")
+            return r.json()["choices"][0]["message"]["content"]
+        print(f"⚠️ Pollinations → {r.status_code}: {r.text[:200]}")
+    except Exception as e:
+        print("⚠️ Pollinations error:", e)
+    return None
+
 def main():
+    # Диагностика: видны ли секреты коду (показываем только длину, не сами ключи)
+    print(f"🔑 Длины ключей: BOT_TOKEN={len(BOT_TOKEN)}, CHAT_ID={len(CHAT_ID)}, HF_KEY={len(HF_KEY)}")
+
     seen = set(open(SEEN_FILE).read().splitlines()) if os.path.exists(SEEN_FILE) else set()
     new_posts, new_ids = [], []
 
@@ -69,9 +92,13 @@ def main():
         print("Новых постов нет — дайджест не отправлен.")
         return
 
-    digest = ask_ai(PROMPT + "\n---\n".join(new_posts))
+    full_text = PROMPT + "\n---\n".join(new_posts)
+
+    digest = ask_hf(full_text)
     if digest is None:
-        print("❌ Ни одна модель не сработала. Скопируй лог выше и пришли мне.")
+        digest = ask_pollinations(full_text)
+    if digest is None:
+        print("❌ Ни одна нейросеть не сработала. Пришли мне лог выше.")
         return
 
     requests.post(f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
