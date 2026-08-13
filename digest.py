@@ -20,19 +20,29 @@ GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-    "Accept-Language": "ru-RU,ru;q=0.9",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+    "Accept-Encoding": "gzip, deflate, br",
+    "Connection": "keep-alive",
+    "Upgrade-Insecure-Requests": "1",
 }
 
 KOMMERSANT_URL = "https://www.kommersant.ru/realty"
 RBC_URL = "https://realty.rbc.ru/"
-ROSREESTR_URL = "https://rosreestr.gov.ru/site/press-tsentr/news/"
+# Несколько вариантов URL Росреестра — пробуем по очереди
+ROSREESTR_URLS = [
+    ("https://rosreestr.gov.ru/press/news/", r"/press/news/"),
+    ("https://rosreestr.gov.ru/site/press/news/", r"/news/"),
+    ("https://rosreestr.gov.ru/site/press-tsentr/news/", r"/news/"),
+]
 WEB_LIMIT = 5
 
 K_KEYWORDS = ["земл", "участ", "кадастр", "ври", "категори", "аренд", "выкуп",
               "торг", "сельхоз", "ижс", "кфх", "склад", "пром", "застрой",
               "девелоп", "недвиж", "ипотек", "изъят", "межев", "дачн", "гектар",
               "жиль", "новострой", "квадратн", "строй", "коттедж", "апартамент",
-              "регистрац", "росреестр", "егрн", "реннов", "расселен"]
+              "регистрац", "росреестр", "егрн", "реннов", "расселен", "собственн",
+              "прав", "договор", "сделк", "дольщик", "дду", "ипотечн"]
 
 SEEN_FILE = "seen.txt"
 POSTS_PER_CHANNEL = 3
@@ -55,27 +65,45 @@ PROMPT = """Ты — помощник земельного специалист�
 """
 
 def clean_text(text):
-    return re.sub(r'\s+', ' ', text).strip()
+    if not text:
+        return ""
+    text = re.sub(r'\s+', ' ', text).strip()
+    # Убираем метки "Эксклюзив" и прочий мусор
+    text = re.sub(r'\b(эксклюзив|реклама|партнерск\w*|новост(и|ей) компан\w*)\b', '', text, flags=re.IGNORECASE).strip()
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def escape_md(text):
+    """Экранирует спецсимволы Markdown."""
+    return re.sub(r'([*_`[\]()~`>#+\-=|{}.!])', r'\\\1', text)
 
 def get_posts(channel, channel_name):
-    r = requests.get(f"https://t.me/s/{channel}", headers={"User-Agent": "Mozilla/5.0"})
-    soup = BeautifulSoup(r.text, "html.parser")
-    posts = []
-    for block in soup.select("div.tgme_widget_message_bubble"):
-        text_div = block.select_one("div.tgme_widget_message_text")
-        time_a   = block.select_one("time")
-        link_a   = block.select_one("a.tgme_widget_message_date")
-        if text_div and time_a:
-            full = clean_text(text_div.get_text(" ", strip=True))
-            if not full:
-                continue
-            posts.append({
-                "channel": channel, "channel_name": channel_name,
-                "dt": time_a.get("datetime", ""), "date": time_a.get("datetime", "")[:10],
-                "full": full,
-                "link": link_a.get("href", "") if link_a else "",
-            })
-    return posts[-POSTS_PER_CHANNEL:]
+    try:
+        r = requests.get(f"https://t.me/s/{channel}", headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+        if r.status_code != 200:
+            return []
+        soup = BeautifulSoup(r.text, "html.parser")
+        posts = []
+        for block in soup.select("div.tgme_widget_message_bubble"):
+            text_div = block.select_one("div.tgme_widget_message_text")
+            time_a   = block.select_one("time")
+            link_a   = block.select_one("a.tgme_widget_message_date")
+            if text_div and time_a:
+                full = clean_text(text_div.get_text(" ", strip=True))
+                if not full:
+                    continue
+                posts.append({
+                    "channel": channel, "channel_name": channel_name,
+                    "dt": time_a.get("datetime", ""), "date": time_a.get("datetime", "")[:10],
+                    "full": full,
+                    "link": link_a.get("href", "") if link_a else "",
+                    # Берём первые 100 символов как заголовок
+                    "title": full[:120].rsplit(' ', 1)[0] + ("…" if len(full) > 120 else ""),
+                })
+        return posts[-POSTS_PER_CHANNEL:]
+    except Exception as e:
+        print(f"⚠️ TG {channel} error:", e)
+        return []
 
 def parse_web(url, href_pattern, base):
     """Универсальный парсер заголовков с новостных сайтов."""
@@ -100,7 +128,7 @@ def parse_web(url, href_pattern, base):
                 items.append({"link": link, "title": title})
             if len(items) >= WEB_LIMIT:
                 break
-        print(f" {url}: найдено {len(items)} статей по теме")
+        print(f"✅ {url}: найдено {len(items)} статей по теме")
         return items
     except Exception as e:
         print(f"⚠️ {url} error:", e)
@@ -113,7 +141,13 @@ def get_rbc():
     return parse_web(RBC_URL, r"/(news|articles)/", "https://realty.rbc.ru")
 
 def get_rosreestr():
-    return parse_web(ROSREESTR_URL, r"/news/", "https://rosreestr.gov.ru")
+    """Пробует несколько URL Росреестра по очереди."""
+    for url, pattern in ROSREESTR_URLS:
+        items = parse_web(url, pattern, "https://rosreestr.gov.ru")
+        if items:
+            return items
+    print("⚠️ Росреестр сайт не отдал данных, использую только TG-канал")
+    return []
 
 def ask_gemini(text):
     if not GEMINI_KEY:
@@ -214,15 +248,16 @@ def main():
     if other_posts:
         parts.append("\n📚 **Также в лентах:**")
         for p in other_posts:
+            parts.append(f"• *{p['channel_name']}*: {escape_md(p['title'])}")
             if p["link"]:
-                parts.append(f"• {p['link']}")
+                parts.append(f"  🔗 {p['link']}")
 
     web_count = 0
     for title, items in web_new:
         if items:
             parts.append(f"\n━━━ {title} ━━━")
             for i in items:
-                parts.append(f"\n• {i['title']}\n🔗 {i['link']}")
+                parts.append(f"\n• {escape_md(i['title'])}\n🔗 {i['link']}")
             web_count += len(items)
 
     parts.append(f"\n📊 TG-постов: {len(new_items)} · Статей с сайтов: {web_count}")
