@@ -3,18 +3,17 @@ name: Земельный дайджест
 on:
   schedule:
     - cron: '0 7 * * *'   # каждый день в 10:00 МСК
-  workflow_dispatch:
+  workflow_dispatch:  # Возможность ручного запуска
 
 jobs:
   digest:
     runs-on: ubuntu-latest
     steps:
-                 - name: Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          persist-credentials: true
-    
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
