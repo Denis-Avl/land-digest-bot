@@ -10,7 +10,7 @@ CHANNELS = [
     "kameneva_law"
 ]
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv("ZEMLYA_DIGEST_BOT", "").strip()
 CHAT_ID   = os.getenv("CHAT_ID", "").strip()
 HF_KEY    = os.getenv("HF_KEY", "").strip()
 
