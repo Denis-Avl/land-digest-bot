@@ -30,10 +30,16 @@ jobs:
           AI_KEY: ${{ secrets.AI_KEY }}
         run: python digest.py
 
-      - name: Commit seen.txt changes
+           - name: Commit seen.txt changes
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add seen.txt
-          git diff --staged --quiet || git commit -m "Update seen.txt"
-          git push
+          if [ -f "seen.txt" ] && [ -s "seen.txt" ]; then
+            git config --local user.email "action@github.com"
+            git config --local user.name "GitHub Action"
+            git add seen.txt
+            if ! git diff --staged --quiet; then
+              git commit -m "Update seen.txt"
+              git push
+            fi
+          else
+            echo "seen.txt is empty or doesn't exist, skipping commit"
+          fi
