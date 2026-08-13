@@ -8,6 +8,7 @@ CHANNELS = [
     ("zemlya_tvoi_kapital", "Земля — твой капитал"),
     ("OzhevaProZem", "ProЗемлю · Дзен Инвестиций"),
     ("kameneva_law", "Земельный юрист · Каменева"),
+    ("rosreestr", "Росреестр РФ · официально"),
 ]
 
 BOT_TOKEN  = os.getenv("BOT_TOKEN", "").strip()
@@ -17,17 +18,26 @@ GEMINI_KEY = os.getenv("GEMINI_KEY", "").strip()
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
 GEMINI_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash"]
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+    "Accept-Language": "ru-RU,ru;q=0.9",
+}
+
 KOMMERSANT_URL = "https://www.kommersant.ru/realty"
-KOMMERSANT_LIMIT = 5
+RBC_URL = "https://realty.rbc.ru/"
+ROSREESTR_URL = "https://rosreestr.gov.ru/site/press-tsentr/news/"
+WEB_LIMIT = 5
+
 K_KEYWORDS = ["земл", "участ", "кадастр", "ври", "категори", "аренд", "выкуп",
               "торг", "сельхоз", "ижс", "кфх", "склад", "пром", "застрой",
               "девелоп", "недвиж", "ипотек", "изъят", "межев", "дачн", "гектар",
-              "жиль", "новострой", "квадратн", "строй", "коттедж", "апартамент"]
+              "жиль", "новострой", "квадратн", "строй", "коттедж", "апартамент",
+              "регистрац", "росреестр", "егрн", "реннов", "расселен"]
 
 SEEN_FILE = "seen.txt"
-POSTS_PER_CHANNEL = 5
-FULL_POSTS_COUNT = 3
-MAX_POST_CHARS = 1500
+POSTS_PER_CHANNEL = 3
+FULL_POSTS_COUNT = 2
+MAX_POST_CHARS = 1200
 # =============================================
 
 PROMPT = """Ты — помощник земельного специалиста. Ниже пронумерованные посты из земельных Telegram-каналов.
@@ -67,33 +77,43 @@ def get_posts(channel, channel_name):
             })
     return posts[-POSTS_PER_CHANNEL:]
 
-def get_kommersant():
-    """Заголовки статей из рубрики «Недвижимость» Коммерсанта."""
+def parse_web(url, href_pattern, base):
+    """Универсальный парсер заголовков с новостных сайтов."""
     try:
-        r = requests.get(KOMMERSANT_URL, timeout=30, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
-            "Accept-Language": "ru-RU,ru;q=0.9"})
+        r = requests.get(url, timeout=30, headers=HEADERS)
         if r.status_code != 200:
-            print(f"⚠️ Коммерсантъ → {r.status_code}, пропускаю")
+            print(f"⚠️ {url} → {r.status_code}, пропускаю")
             return []
         soup = BeautifulSoup(r.text, "html.parser")
         items, used = [], set()
-        for a in soup.select("a[href*='/doc/']"):
+        for a in soup.find_all("a", href=True):
+            if not re.search(href_pattern, a["href"]):
+                continue
             title = clean_text(a.get_text(" ", strip=True))
-            link = a["href"]
-            link = link if link.startswith("http") else "https://www.kommersant.ru" + link
-            if len(title) < 25 or link in used:
+            if len(title) < 30:
+                continue
+            link = a["href"] if a["href"].startswith("http") else base + a["href"]
+            if link in used:
                 continue
             if any(k in title.lower() for k in K_KEYWORDS):
                 used.add(link)
                 items.append({"link": link, "title": title})
-            if len(items) >= KOMMERSANT_LIMIT:
+            if len(items) >= WEB_LIMIT:
                 break
-        print(f"📰 Коммерсантъ: найдено {len(items)} статей по теме")
+        print(f" {url}: найдено {len(items)} статей по теме")
         return items
     except Exception as e:
-        print("⚠️ Коммерсантъ error:", e)
+        print(f"⚠️ {url} error:", e)
         return []
+
+def get_kommersant():
+    return parse_web(KOMMERSANT_URL, r"/doc/", "https://www.kommersant.ru")
+
+def get_rbc():
+    return parse_web(RBC_URL, r"/(news|articles)/", "https://realty.rbc.ru")
+
+def get_rosreestr():
+    return parse_web(ROSREESTR_URL, r"/news/", "https://rosreestr.gov.ru")
 
 def ask_gemini(text):
     if not GEMINI_KEY:
@@ -157,9 +177,14 @@ def main():
                 new_items.append(post)
                 seen.add(post["dt"])
 
-    k_items = [i for i in get_kommersant() if i["link"] not in seen]
+    web_sources = [
+        ("🏛 **Росреестр · пресс-центр**", get_rosreestr()),
+        ("📰 **Коммерсантъ · Недвижимость**", get_kommersant()),
+        ("🏢 **РБК Недвижимость**", get_rbc()),
+    ]
+    web_new = [(title, [i for i in items if i["link"] not in seen]) for title, items in web_sources]
 
-    if not new_items and not k_items:
+    if not new_items and not any(items for _, items in web_new):
         print("Новых постов нет.")
         return
 
@@ -170,8 +195,7 @@ def main():
         ai = ask_gemini(PROMPT.format(n=FULL_POSTS_COUNT) + "\n".join(numbered))
         if ai:
             summary = re.sub(r'\n*TOP:\s*[\d,\s]+', '', ai, flags=re.IGNORECASE).strip()
-            top_nums = parse_top_numbers(ai, len(new_items))
-            top_posts = [new_items[i-1] for i in top_nums]
+            top_posts = [new_items[i-1] for i in parse_top_numbers(ai, len(new_items))]
     other_posts = [p for p in new_items if p not in top_posts]
 
     # --- Собираем дайджест ---
@@ -193,22 +217,26 @@ def main():
             if p["link"]:
                 parts.append(f"• {p['link']}")
 
-    if k_items:
-        parts.append("\n━━━ 📰 **Коммерсантъ · Недвижимость** ━━━")
-        for i in k_items:
-            parts.append(f"\n• {i['title']}\n🔗 {i['link']}")
+    web_count = 0
+    for title, items in web_new:
+        if items:
+            parts.append(f"\n━━━ {title} ━━━")
+            for i in items:
+                parts.append(f"\n• {i['title']}\n🔗 {i['link']}")
+            web_count += len(items)
 
-    parts.append(f"\n📊 TG-постов: {len(new_items)} · Статей Ъ: {len(k_items)}")
+    parts.append(f"\n📊 TG-постов: {len(new_items)} · Статей с сайтов: {web_count}")
 
     digest = "\n".join(parts)
     if len(digest) > 4000:
         digest = digest[:4000] + "\n\n...(сокращено)"
 
     if send(digest) == 200:
-        for i in k_items:
-            seen.add(i["link"])
+        for _, items in web_new:
+            for i in items:
+                seen.add(i["link"])
         open(SEEN_FILE, "w").write("\n".join(sorted(seen)))
-        print(f"✅ Дайджест отправлен! TG: {len(new_items)}, Ъ: {len(k_items)}")
+        print(f"✅ Дайджест отправлен! TG: {len(new_items)}, сайты: {web_count}")
     else:
         print("❌ Ошибка отправки в Telegram")
 
