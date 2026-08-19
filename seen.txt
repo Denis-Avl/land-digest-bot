@@ -31,6 +31,7 @@
 2026-08-17T13:24:32+00:00
 2026-08-17T14:26:37+00:00
 2026-08-18T06:08:54+00:00
+2026-08-19T06:33:42+00:00
 https://realty.rbc.ru/news/6a6733449a7947aae6bfcc52
 https://realty.rbc.ru/news/6a7375809a79478e21b66b9d
 https://realty.rbc.ru/news/6a7378919a7947a663be2b95
@@ -42,10 +43,14 @@ https://realty.rbc.ru/news/6a7b3a209a79473fb36fae2c
 https://realty.rbc.ru/news/6a7c085a9a79471ef26be32b
 https://realty.rbc.ru/news/6a7c40139a79476cc996df96
 https://realty.rbc.ru/news/6a7c6b409a79472eddd6bd24
+https://realty.rbc.ru/news/6a7c91659a794736d42d8f31
 https://realty.rbc.ru/news/6a7dad289a7947814bb1bf00
 https://realty.rbc.ru/news/6a7de2429a7947389f553da8
+https://realty.rbc.ru/news/6a8179ae9a79476df4a12ff5
 https://realty.rbc.ru/news/6a82eda89a79475a710592f7
 https://realty.rbc.ru/news/6a830d099a794767fa7a5b82
+https://realty.rbc.ru/news/6a844aff9a7947ac7dd373bd
+https://realty.rbc.ru/news/6a8456b99a79470af50f9de2
 https://www.kommersant.ru/doc/4996583
 https://www.kommersant.ru/doc/4997118
 https://www.kommersant.ru/doc/5008510
