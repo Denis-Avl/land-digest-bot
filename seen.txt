@@ -190,6 +190,9 @@
 2026-10-31T05:15:36+00:00
 2026-10-31T06:23:21+00:00
 2026-10-31T10:27:59+00:00
+2026-11-01T05:13:31+00:00
+2026-11-01T07:17:31+00:00
+2026-11-01T08:00:10+00:00
 https://realty.rbc.ru/news/6a66a91e9a794738bbe88fc9
 https://realty.rbc.ru/news/6a6733449a7947aae6bfcc52
 https://realty.rbc.ru/news/6a723bbf9a7947684f47abf0
@@ -340,3 +343,4 @@ https://www.kommersant.ru/doc/9070937
 https://www.kommersant.ru/doc/9077580
 https://www.kommersant.ru/doc/9078280
 https://www.kommersant.ru/doc/9078283
+https://www.kommersant.ru/doc/9078508
